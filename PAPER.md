@@ -282,8 +282,9 @@ released for reproduction and extension.
 ## Artifact Availability
 
 Open-source harness, mutation vectors, detectors, defense, and fuzzing harness:
-https://github.com/akundhuru/attachment-differ. Reproduction commands are inline
-per section; see `README.md`,
+https://github.com/akundhuru/attachment-differ (archived at
+Zenodo, DOI [10.5281/zenodo.21894923](https://doi.org/10.5281/zenodo.21894923)).
+Reproduction commands are inline per section; see `README.md`,
 `TAXONOMY.md`, `DEFENSE_GAP.md`, `REAL_CORPUS.md`, and `FUZZING.md`.
 
 ## References

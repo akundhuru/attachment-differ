@@ -1,5 +1,8 @@
 # attachment-differ
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21894923.svg)](https://doi.org/10.5281/zenodo.21894923)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A differential-testing harness for content extraction in email-attachment
 security pipelines. It measures where multiple production extractors (Apache
 Tika, PDFBox, pypdf, pdfminer, oletools) **diverge on the same attachment**, and
