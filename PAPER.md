@@ -22,8 +22,8 @@ opens is a lure.
 We contribute (1) an open-source **differential harness** measuring divergence
 across N extractors plus an OCR "what the human sees" oracle; (2) a **vector
 taxonomy** beyond font remapping — invisible-layer, text-as-image,
-optional-content, malformed-recoverable, and container confusion — implemented as
-programmatic mutations; and (3) a **defense-gap** result: we re-implement the
+image+invisible-decoy, optional-content, and malformed-recoverable — implemented
+as programmatic mutations; and (3) a **defense-gap** result: we re-implement the
 OCR font-verification defense proposed by *PDF Mirage* (USENIX '17) and show it
 catches only the font vector it was designed for, missing every non-font vector.
 On a real public document corpus (GovDocs1), extractors diverge on 46% of
