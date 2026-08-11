@@ -1,0 +1,42 @@
+# virtualenv
+.venv/
+
+# local secrets (API keys) — never commit
+.env.local
+
+# pre-disclosure material — keep out of the public tree until the olefile
+# finding is filed/resolved (see PAPER.md §9 for the publishable summary)
+DISCLOSURE.md
+
+# internal planning / strategy notes — not part of the public artifact
+parser-differential-project-plan-v2.md
+week1-positioning-note.md
+
+# run outputs
+results/*
+!results/.gitkeep
+
+# fuzzing crash inputs — may be large / adversarial; regenerate from seeds
+results/fuzz/
+
+# corpus: keep generated fixtures small; never commit large or malware sets
+corpus/*.pdf
+corpus/baseline/
+corpus/mutated/
+corpus/real/
+corpus/*.docx
+corpus/*.doc
+corpus/*.xls
+corpus/*.xlsx
+corpus/malware/
+corpus/private/
+
+# Java-bridge jars (large binaries; fetch per requirements.txt / env.sh notes)
+jars/*.jar
+
+# python
+__pycache__/
+*.pyc
+
+# local editor / Claude Code settings — machine-specific
+.claude/

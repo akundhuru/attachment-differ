@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this harness, please cite it."
+title: >-
+  attachment-differ: Cross-Extractor Content Divergence as an Evasion Primitive
+  in Email Attachment Pipelines
+abstract: >-
+  A differential-testing harness that measures where multiple production content
+  extractors (Tika, PDFBox, pypdf, pdfminer, oletools) diverge on the same
+  attachment and from an OCR render-oracle, with a vector taxonomy, a
+  detector-impact (evasion) study, and a re-implementation of PDF Mirage's
+  font-verification defense showing it does not generalize to non-font vectors.
+authors:
+  - given-names: Ankitha
+    family-names: Kundhuru
+version: 0.1.0
+date-released: "2026-08-03"       # update at arXiv/release
+license: MIT
+keywords:
+  - parser differential
+  - content extraction
+  - email attachment security
+  - evasion
+  - PDF
+  - fuzzing
+repository-code: "https://github.com/akundhuru/attachment-differ"
+# preferred-citation:                                              # add arXiv id on posting
+#   type: article
+#   title: "One File, Many Readings: ..."
+#   authors: [...]
+#   url: "https://arxiv.org/abs/XXXX.XXXXX"

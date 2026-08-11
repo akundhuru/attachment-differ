@@ -1,0 +1,386 @@
+\pdfoutput=1
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{textcomp}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+\usepackage[numbers,sort&compress]{natbib}
+
+% Monospace inline code helper
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{One File, Many Readings: Cross-Extractor Content Divergence as
+an Evasion Primitive in Email Attachment Pipelines}
+
+\author{Ankitha Kundhuru}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Production email-security pipelines extract the textual content of attachments
+and score that text with downstream detectors (phishing/brand/malware
+classifiers, increasingly LLM-based). These pipelines chain \emph{multiple}
+content extractors across formats---Apache Tika, PDFBox, pypdf, pdfminer,
+oletools. We show that the same attachment yields \emph{different extracted
+content depending on which extractor runs}, and that this cross-extractor
+divergence is an \emph{evasion primitive}: an attacker who knows (or probes) the
+pipeline can craft an attachment whose extracted text scores benign while the
+rendered document a human opens is a lure.
+
+We contribute (1) an open-source \textbf{differential harness} measuring
+divergence across $N$ extractors plus an OCR ``what the human sees'' oracle; (2)
+a \textbf{vector taxonomy} beyond font remapping---invisible-layer,
+text-as-image, optional-content, malformed-recoverable, and container
+confusion---implemented as programmatic mutations; and (3) a
+\textbf{defense-gap} result: we re-implement the OCR font-verification defense
+proposed by \emph{PDF Mirage} (USENIX~'17) and show it catches only the font
+vector it was designed for, missing every non-font vector. On a real public
+document corpus (GovDocs1), extractors diverge on 46\% of attachment-pair
+comparisons, and two independent content detectors (a deterministic heuristic
+and Claude) both flip malicious$\rightarrow$benign on 32\% of extractor pairs
+for image-based masking vectors.
+\end{abstract}
+
+\section{Introduction}
+
+An email-attachment detection pipeline does not score the \emph{bytes} of an
+attachment; it scores the \emph{text an extractor pulls out of it}. That
+extraction step is where security is quietly decided. Different extractors
+implement different---individually spec-compliant---choices about encodings,
+layer visibility, render modes, and recovery from malformed structure. The
+result is that ``the content of this attachment'' is not a single string; it is
+a function of which extractor you ask.
+
+We frame this as an evasion primitive. If a pipeline's detector reads extractor
+$X$'s output, an attacker crafts an attachment where $X$ reads benign text while
+the rendered page---what the victim actually reads---carries the lure. This is
+strictly more general than a single parser bug: it exploits \emph{legitimate
+disagreement between compliant parsers}, so there is no single ``wrong'' parser
+to patch.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item \textbf{Measurement.} A differential harness (\S\ref{sec:harness}) that
+  runs $N$ extractors plus an OCR render-oracle over an attachment and
+  quantifies pairwise divergence, per-extractor blind-spot rates, and
+  per-format/vector breakdowns. On real documents it measures a 46\% pairwise
+  divergence rate (\S\ref{sec:measurement}).
+  \item \textbf{Attack.} A vector taxonomy (\S\ref{sec:taxonomy}) and a
+  detector-impact study (\S\ref{sec:detector}) showing which divergences flip a
+  modern content detector's verdict---including an LLM detector (Claude).
+  \item \textbf{Defense-gap.} A faithful re-implementation of PDF Mirage's
+  font-verification defense and a demonstration that it does not generalize to
+  the non-font vectors that dominate real attachments (\S\ref{sec:defense}).
+\end{enumerate}
+
+\section{Background and Related Work}
+
+\paragraph{PDF Mirage: Content Masking Attack~\cite{pdfmirage}.} Weaponizes the
+\emph{extracted $\neq$ rendered} gap via font remapping (a glyph renders as A
+while \code{/ToUnicode} claims B) and proposes an OCR-based font-verification
+defense. We differ on three axes: we are \emph{extractor-vs-extractor} (not
+human-vs-single-parser), \emph{multi-format and multi-vector} (not font-only),
+and we show their defense fails on our non-font vectors (\S\ref{sec:defense}).
+
+\paragraph{Extract Me If You Can~\cite{extractme}.} Diffs a reference JavaScript
+extractor (Adobe) against open-source extractors over 163k PDFs to evade malware
+AV. Ours targets \emph{content} extraction (phishing/brand), uses a human-render
+OCR oracle rather than an execute-oracle, and modern/LLM content detectors
+rather than AV.
+
+\paragraph{Body Obfuscation~\cite{bodyobfuscation}.} Measures email-\emph{body}
+obfuscation prevalence (386 phishing emails, ten techniques) and its impact on
+SpamAssassin/Rspamd scores. Ours is \emph{attachments}, a controlled automated
+differential rather than a prevalence measurement, against modern detectors.
+
+\paragraph{Positioning.} The intersection---a multi-extractor \emph{content}
+differential in the email-attachment threat model, framed as a detector-evasion
+primitive---is, to our knowledge, open.
+
+\section{Threat Model}
+
+The attacker can send an attachment and knows (or probes, via bounce/verdict
+oracles) which extractor the target pipeline uses for a given format. The
+defender runs one or more extractors and scores their output. The victim opens
+the attachment in a normal renderer (the OCR oracle stands in for ``what the
+victim reads''). The attacker's goal: a document scored benign by the pipeline's
+extractor but read as a lure by the victim. We assume open-source tools and
+public data throughout; no proprietary detection internals are used or required.
+
+\section{The Differential Harness}
+\label{sec:harness}
+
+For one attachment the harness runs every applicable extractor and computes
+pairwise similarity (normalized-text \code{SequenceMatcher} ratio;
+\S\ref{sec:limitations} discusses stronger metrics), separating two axes:
+\begin{itemize}
+  \item \textbf{extractor-vs-extractor}---two parsers disagree on the same bytes.
+  \item \textbf{extractor-vs-render}---a parser disagrees with the OCR oracle
+  (render $\rightarrow$ pytesseract), i.e.\ reads something the human does not,
+  or misses what they see.
+\end{itemize}
+
+Extractors: \code{pypdf}, \code{pdfminer.six}, Apache \code{Tika}, Apache
+\code{PDFBox} (PDF and OOXML/OLE), \code{oletools} (OLE/macros), and
+\code{ocr\_render} (PyMuPDF render + pytesseract) as the oracle. Every adapter
+obeys a no-raise contract: a missing backend surfaces as a clean ``this
+extractor was blind here,'' itself signal. A batch runner aggregates
+divergence-rate statistics to machine-readable JSON/CSV.
+
+\emph{Reproduce:} \code{python differ.py <file>};
+\code{python matrix.py <corpus>}.
+
+\paragraph{A note on Tika.} Tika bundles Tesseract and OCRs embedded images by
+default, so it behaves as a hybrid parser+OCR and diverges from pure text
+extractors on identical bytes (e.g.\ on a text-as-image PDF,
+pypdf/pdfminer/pdfbox return empty while Tika returns ${\sim}0.66$ of the OCR
+text). We treat Tika-OCR as a confound and recommend measuring both with and
+without it (\code{OCR strategy NO\_OCR}).
+
+\section{Divergence Vector Taxonomy}
+\label{sec:taxonomy}
+
+Each vector is a programmatic mutation that makes an attachment read one way to a
+human and another to a text-layer parser (\code{mutations/}, validated
+end-to-end by \code{mutations/validate.py}---all six produce their predicted
+divergence).
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\linewidth}{@{}c l l X@{}}
+\toprule
+\# & Vector & Class & Mechanism \\
+\midrule
+1 & invisible-layer & text render mode 3 & decoy drawn invisibly; parsers read it, OCR/human don't \\
+2 & text-as-image & rasterization & content is pixels, no text layer; parsers blind, OCR reads \\
+3 & image+invisible decoy & 1+2 & lure as image, benign invisible decoy; parsers read benign \\
+4 & optional-content & OCG layer OFF & decoy in a hidden PDF layer; renderers hide, parsers extract \\
+5 & malformed-recoverable & corrupt xref & lenient parsers recover, strict ones error (availability divergence) \\
+6 & font-encoding & glyph $\neq$ \code{/ToUnicode} & PDF Mirage primitive; parsers extract a scramble, OCR reads the glyphs \\
+\bottomrule
+\end{tabularx}
+\caption{The six divergence vectors.}
+\end{table}
+
+Documented in \code{TAXONOMY.md}. Container/polyglot and email-multipart vectors
+are enumerated as future extensions (the latter needs an \code{.eml}-level
+harness).
+
+\section{Measurement (D3)}
+\label{sec:measurement}
+
+\paragraph{Synthetic control.} On clean baseline PDFs, the pure-text extractors
+agree exactly (pypdf vs pdfminer $=$ 0\% divergence). On the mutated corpus, 80\%
+of files diverge---a clean separation confirming the vectors, not the harness,
+drive divergence.
+
+\paragraph{Real corpus.} We normalize public corpora with an \code{.eml}/\code{.mbox}
+attachment loader. Apache SpamAssassin (2{,}400 spam emails $\rightarrow$ 31
+attachments) is overwhelmingly image/HTML; document attachments are rare---itself
+a finding about where document-parser evasion lives. For a document-rich sample
+we use \textbf{GovDocs1} (Digital Corpora~\cite{govdocs1}), ${\sim}$1M
+redistributable real \code{.gov} documents. On a 42-document sample (20 PDF / 10
+DOC / 6 XLS / 6 PPT):
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}l l@{}}
+\toprule
+metric & value \\
+\midrule
+overall pairwise divergence & \textbf{46.5\%} (66/142 comparisons) \\
+files with $\geq$1 divergence & \textbf{69\%} \\
+pdfminer vs pypdf & \textbf{55\%} (vs \textbf{0\%} on synthetic baseline) \\
+pdfminer vs tika & 70\% $\cdot$ oletools vs tika 68\% $\cdot$ pdfbox vs pdfminer 50\% \\
+\bottomrule
+\end{tabular}
+\caption{Real-corpus divergence (GovDocs1). \emph{Preliminary ($n=42$); the
+harness scales to full GovDocs1 threads.}}
+\end{table}
+
+\paragraph{Worked example (\code{000816.pdf}, a US Census NAICS report).} The
+same special-dash glyph is extracted four incompatible ways on identical bytes
+(pypdf vs pdfminer similarity 0.25):
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}l l r@{}}
+\toprule
+extractor & output for the glyph & chars \\
+\midrule
+pypdf & \code{/thrqtrEMdash} (internal glyph name leaked) & 31{,}614 \\
+pdfminer & \code{(cid:1)} (unmapped CID) & 25{,}270 \\
+tika & U+FFFD replacement char & 24{,}619 \\
+pdfbox & \code{\textbackslash x01} (raw control byte) ---${\sim}$40\% of the text & 12{,}519 \\
+\bottomrule
+\end{tabular}
+\caption{One glyph, four readings on identical bytes.}
+\end{table}
+
+This is a \emph{naturally occurring} font/encoding divergence in the wild---the
+same class \S\ref{sec:taxonomy}'s vector 6 weaponizes deliberately.
+
+\section{Detector Impact (D4)}
+\label{sec:detector}
+
+Divergence matters iff it changes a detector's decision. D4's scope is the five
+non-font content-masking vectors (the font vector is evaluated separately as the
+subject of the \S\ref{sec:defense} defense-gap experiment). For each such
+masking vector we classify every extractor's output and the OCR ground truth
+with two detectors---a deterministic phishing heuristic (offline, zero-cost,
+reproducible) and an LLM detector (Claude, structured-output verdict). An
+\textbf{evasion} is a (file, extractor) pair where the OCR truth scores malicious
+but the extractor's text scores benign.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}l c c c@{}}
+\toprule
+detector & files w/ malicious truth & files evaded & extractor evasions \\
+\midrule
+heuristic & 5 & 2 & \textbf{6/19 (31.6\%)} \\
+Claude (haiku) & 5 & 2 & \textbf{6/19 (31.6\%)} \\
+\bottomrule
+\end{tabular}
+\caption{Detector-impact (evasion) results.}
+\end{table}
+
+The two independent detectors agree exactly---the evasion is a property of the
+extraction divergence, not a heuristic artifact. Evasions concentrate on the
+image-based vectors (text-as-image, image+decoy), where pypdf/pdfminer/pdfbox
+read the benign decoy (or nothing) while the victim sees the lure. Notably Tika
+does \textbf{not} evade there---its built-in OCR recovers the lure, closing the
+blind spot the pure text extractors have (a concrete pipeline-configuration
+consequence).
+
+\section{Defense-Gap (D5)}
+\label{sec:defense}
+
+We re-implement PDF Mirage's OCR font-verification
+(\code{defense/font\_verify.py}) as a faithful \emph{font-integrity} check: OCR
+the rendered page and compare it to what the \textbf{visible} text layer claims
+via \code{/ToUnicode} (visible $=$ \code{get\_texttrace} spans excluding
+render-mode-3; OCG-hidden text is already absent). A page with no visible text
+layer has no fonts to verify. Running it against every vector:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}l l c c l@{}}
+\toprule
+vector & class & font-based & flags? & verdict \\
+\midrule
+baseline & --- & no & no & true negative \\
+\textbf{font\_remap} & font-encoding & \textbf{yes} & \textbf{yes} & \textbf{CAUGHT (as designed)} \\
+invisible\_text & invisible-layer & no & no & MISSED \\
+text\_as\_image & text-as-image & no & no & MISSED \\
+image\_with\_decoy & text-as-image & no & no & MISSED \\
+ocg\_hidden & optional-content & no & no & MISSED \\
+malformed\_xref & malformed-recoverable & no & no & MISSED \\
+\bottomrule
+\end{tabular}
+\caption{PDF Mirage's font-verification defense vs.\ every vector.}
+\end{table}
+
+\textbf{Font vectors caught 1/1; non-font vectors missed 5/5.} The defense is
+single-extractor and font-specific: it verifies rendered glyphs against their
+mapping. It cannot see content that is an image, an invisible/hidden layer, or a
+structural-recovery divergence, and it says nothing about
+extractor-vs-extractor disagreement---the primitive we measure. Since non-font
+masking dominates real attachments, the accepted defense leaves the larger
+surface open.
+
+\section{Robustness Testing and Responsible Disclosure}
+\label{sec:robustness}
+
+Divergence is (mostly) spec-compliant behavior, not a memory-safety bug. To
+probe for disclosable DoS/crash bugs we built a separate mutation-fuzzing
+harness (\code{fuzz/}) that mutates real GovDocs1 seeds (radamsa) and runs each
+parser in an isolated subprocess under a timeout + resource caps, classifying
+crashes (signal death), hangs (timeout), and OOM/recursion as bugs distinct from
+ordinary parse errors. A refined campaign (per target sequentially, 256\,KB
+input cap, no CPU contention; 15k iterations on MuPDF, 6k each on pdfminer/pypdf,
+4k on oletools, 1.5k each on Tika/PDFBox) rediscovered an
+\textbf{unbounded-recursion condition in \code{olefile}'s directory handling}
+(the OLE2 parser under \code{oletools}): a self-referential root directory entry
+drives \code{OleDirectoryEntry.\_list()} into infinite recursion during
+\code{listdir()} (minimized to a 1536-byte file). \textbf{This is not a novel
+bug.} olefile issue \#103 (2018)~\cite{olefile103} reported infinite recursion
+while \emph{opening} a malformed file; its fix moved the ``referenced more than
+once'' guard to the top of \code{append\_kids()}, which stops the build-phase
+recursion. Our case is a \emph{confirmed residual} of that fix: the root entry
+is loaded directly and never passes through \code{append\_kids}, so it is never
+marked ``used''; a self-referential root therefore slips into its own
+\code{kids} and recurses in \code{\_list()} during \code{listdir()}---a path the
+\#103 fix does not cover (cf.\ CWE-674~\cite{cwe674}). It is low-severity (a
+catchable \code{RecursionError}; \#103 itself received no CVE), reproduces on the
+current release, and is addressed by a one-line complement to the \#103 fix. We
+report it, if at all, as an incomplete-fix hardening PR citing \#103, and make
+\textbf{no CVE claim}. A weaker pdfminer.six super-linear-time observation
+(73\,KB $\rightarrow$ ${\sim}$55 CPU-s) was also recorded. The takeaway is
+methodological: the harness surfaced a real, minimizable robustness gap from real
+seeds.
+
+A methodological note worth reporting: a naive timeout-based hang detector
+produces false positives from size-inflating mutators under CPU contention (an
+earlier concurrent run flagged seven ``hangs'' that all completed on idle CPU).
+Real DoS shows the opposite signature---\emph{small input, disproportionate
+cost}---which the size cap plus per-run wall-time recording isolates. CVEs remain
+upside, not a dependency of the contributions above.
+
+\section{Limitations and Ethics}
+\label{sec:limitations}
+
+\begin{itemize}
+  \item \textbf{Sample size.} Real-corpus numbers ($n=42$) and mutation-corpus
+  numbers are preliminary; the harness scales to full corpora---this draft
+  reports the phenomenon and the method, and larger runs are the natural next
+  step.
+  \item \textbf{Similarity metric.} \code{SequenceMatcher} is a first-pass
+  metric; token-set or embedding distance may sharpen results without changing
+  the qualitative story.
+  \item \textbf{OCR oracle.} OCR is imperfect and slow on long documents (we
+  expose a page cap and an off switch); it is a stand-in for human reading, not
+  ground truth.
+  \item \textbf{Ethics.} Open-source tools and public data only. Vectors are
+  demonstrated on synthetic and public documents; any parser bug found via
+  fuzzing is disclosed responsibly before publication. No proprietary detection
+  internals are used.
+\end{itemize}
+
+\section{Conclusion}
+
+The unit a content detector scores---extracted text---is not a property of the
+attachment but of the extractor. We measured that cross-extractor divergence
+directly (46\% on real documents), showed it flips modern content detectors
+including an LLM (32\% of extractor pairs on image-masking vectors), and showed
+the accepted content-masking defense is font-specific and misses the vectors
+that dominate real attachments. The harness, taxonomy, and defense-gap
+experiment are released for reproduction and extension.
+
+\section*{Artifact Availability}
+
+Open-source harness, mutation vectors, detectors, defense, and fuzzing harness:
+\url{https://github.com/akundhuru/attachment-differ}. Reproduction commands are
+inline per section; see \code{README.md}, \code{TAXONOMY.md},
+\code{DEFENSE\_GAP.md}, \code{REAL\_CORPUS.md}, and \code{FUZZING.md}.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

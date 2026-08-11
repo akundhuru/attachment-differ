@@ -1,0 +1,13 @@
+# Pure-Python extractor stack — runs anywhere, no JRE required.
+pypdf
+pdfminer.six
+oletools
+PyMuPDF          # render backend for the OCR ground-truth channel
+pytesseract      # needs the `tesseract` binary on PATH (brew install tesseract)
+reportlab        # fixture generation only
+
+# Java-bridge extractors (tika, pdfbox) need a JRE and a jar; they are optional
+# and self-disable when unavailable. To enable:
+#   - install a JRE (e.g. `brew install temurin`)
+#   - set TIKA_JAR=/path/to/tika-app.jar  and/or  PDFBOX_JAR=/path/to/pdfbox-app.jar
+#   - (or `pip install tika` for the auto-download tika-python backend)
