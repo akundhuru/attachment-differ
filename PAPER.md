@@ -28,7 +28,7 @@ OCR font-verification defense proposed by *PDF Mirage* (USENIX '17) and show it
 catches only the font vector it was designed for, missing every non-font vector.
 On a real public document corpus (GovDocs1), extractors diverge on 46.5% of
 attachment-pair comparisons, and two independent content detectors (a
-deterministic heuristic and an LLM) both flip malicious→benign on 31.6% of
+deterministic heuristic and Claude) both flip malicious→benign on 31.6% of
 extractor pairs for image-based masking vectors.
 
 ---
@@ -56,8 +56,8 @@ patch.
    per-extractor blind-spot rates, and per-format/vector breakdowns. On real
    documents it measures a 46.5% pairwise divergence rate (§6).
 2. **Attack.** A vector taxonomy (§5) and a detector-impact study (§7) showing
-   which divergences flip a modern content detector's verdict — including an
-   LLM detector.
+   which divergences flip a modern content detector's verdict — including
+   Claude.
 3. **Defense-gap.** A faithful re-implementation of PDF Mirage's font-verification
    defense and a demonstration that it does not generalize to the non-font
    vectors that dominate real attachments (§8).
@@ -195,16 +195,15 @@ Divergence matters iff it changes a detector's decision. D4's scope is the five
 non-font content-masking vectors (the font vector is evaluated separately as the
 subject of the §8 defense-gap experiment). For each such masking vector we
 classify every extractor's output and the OCR ground truth with two detectors
-— a deterministic phishing heuristic (offline, zero-cost, reproducible) and an
-LLM detector (structured-output verdict; the exact model and snapshot version are
-pinned in `README.md`). An **evasion** is a
+— a deterministic phishing heuristic (offline, zero-cost, reproducible) and
+Claude (Haiku 4.5), producing a structured-output verdict. An **evasion** is a
 (file, extractor) pair where the OCR truth scores malicious but the extractor's
 text scores benign.
 
 | detector | files w/ malicious truth | files evaded | extractor evasions |
 |---|---|---|---|
 | heuristic | 5 | 2 | **6/19 (31.6%)** |
-| LLM | 5 | 2 | **6/19 (31.6%)** |
+| Claude (Haiku 4.5) | 5 | 2 | **6/19 (31.6%)** |
 
 The two independent detectors agree exactly — the evasion is a property of the
 extraction divergence, not a heuristic artifact. Evasions concentrate on the
@@ -290,7 +289,7 @@ not a dependency of the contributions above.
 The unit a content detector scores — extracted text — is not a property of the
 attachment but of the extractor. We measured that cross-extractor divergence
 directly (46.5% on real documents), showed it flips modern content detectors
-including an LLM (31.6% of extractor pairs on image-masking vectors), and showed the
+including Claude (31.6% of extractor pairs on image-masking vectors), and showed the
 accepted content-masking defense is font-specific and misses the vectors that
 dominate real attachments. The harness, taxonomy, and defense-gap experiment are
 released for reproduction and extension.

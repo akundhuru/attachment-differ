@@ -20,7 +20,7 @@ extractor that reads benign while the victim reads a lure.
   vectors, plus an OCR "what the human sees" oracle. On real documents,
   extractors diverge on **46%** of attachment-pair comparisons.
 - **Attack (D4)** — which divergences flip a modern content detector. Two
-  independent detectors (a deterministic heuristic and an LLM) both flip
+  independent detectors (a deterministic heuristic and Claude) both flip
   malicious→benign on **32%** of extractor pairs for image-masking vectors.
 - **Defense-gap (D5)** — a faithful re-implementation of *PDF Mirage*'s
   (USENIX '17) OCR font-verification defense, shown to catch only the font vector
@@ -48,11 +48,11 @@ python differ.py corpus/<file>.pdf     # one file, all available extractors
 - OCR oracle → the `tesseract` binary (`brew install tesseract`).
 - Tika / PDFBox → a JRE + the app jars; set `TIKA_JAR` / `PDFBOX_JAR` (see
   `env.sh`), then `source env.sh` before a run.
-- LLM detector → `export ANTHROPIC_API_KEY=...`; otherwise the offline heuristic
-  detector runs alone. **Pinned model for the paper's D4 numbers:**
-  `DETECTOR_MODEL=claude-haiku-4-5` (Anthropic Claude Haiku 4.5). Any
-  chat-completion LLM can be substituted via `DETECTOR_MODEL`; the paper reports
-  the detector generically as "an LLM," and this is the exact snapshot used.
+- Claude detector → `export ANTHROPIC_API_KEY=...`; otherwise the offline
+  heuristic detector runs alone. **Pinned model for the paper's D4 numbers:**
+  `DETECTOR_MODEL=claude-haiku-4-5` (Anthropic Claude Haiku 4.5) — the exact
+  snapshot the paper reports. A different model can be substituted via
+  `DETECTOR_MODEL`.
 
 Common runs:
 ```bash

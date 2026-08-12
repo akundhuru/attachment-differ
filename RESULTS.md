@@ -26,7 +26,7 @@ extractor's text scored benign. Scope: the five non-font content-masking vectors
 | detector | extractor evasions | files evaded |
 |---|---|---|
 | heuristic (offline) | **6/19 (31.6%)** | image_with_decoy, text_as_image |
-| LLM (live) | **6/19 (31.6%)** | same |
+| Claude (Haiku 4.5, live) | **6/19 (31.6%)** | same |
 
 Two independent detectors agree exactly — not a heuristic artifact. Pure text
 extractors (pypdf/pdfminer/pdfbox) read the benign decoy; Tika's built-in OCR
