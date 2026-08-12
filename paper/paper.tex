@@ -48,7 +48,7 @@ proposed by \emph{PDF Mirage} (USENIX~'17) and show it catches only the font
 vector it was designed for, missing every non-font vector. On a real public
 document corpus (GovDocs1), extractors diverge on 46.5\% of attachment-pair
 comparisons, and two independent content detectors (a deterministic heuristic
-and Claude) both flip malicious$\rightarrow$benign on 31.6\% of extractor pairs
+and an LLM) both flip malicious$\rightarrow$benign on 31.6\% of extractor pairs
 for image-based masking vectors.
 \end{abstract}
 
@@ -78,7 +78,7 @@ to patch.
   divergence rate (\S\ref{sec:measurement}).
   \item \textbf{Attack.} A vector taxonomy (\S\ref{sec:taxonomy}) and a
   detector-impact study (\S\ref{sec:detector}) showing which divergences flip a
-  modern content detector's verdict---including an LLM detector (Claude).
+  modern content detector's verdict---including an LLM detector.
   \item \textbf{Defense-gap.} A faithful re-implementation of PDF Mirage's
   font-verification defense and a demonstration that it does not generalize to
   the non-font vectors that dominate real attachments (\S\ref{sec:defense}).
@@ -250,7 +250,7 @@ non-font content-masking vectors (the font vector is evaluated separately as the
 subject of the \S\ref{sec:defense} defense-gap experiment). For each such
 masking vector we classify every extractor's output and the OCR ground truth
 with two detectors---a deterministic phishing heuristic (offline, zero-cost,
-reproducible) and an LLM detector (Claude, structured-output verdict). An
+reproducible) and an LLM detector (structured-output verdict). An
 \textbf{evasion} is a (file, extractor) pair where the OCR truth scores malicious
 but the extractor's text scores benign.
 
@@ -262,7 +262,7 @@ but the extractor's text scores benign.
 detector & files w/ malicious truth & files evaded & extractor evasions \\
 \midrule
 heuristic & 5 & 2 & \textbf{6/19 (31.6\%)} \\
-Claude (haiku) & 5 & 2 & \textbf{6/19 (31.6\%)} \\
+LLM & 5 & 2 & \textbf{6/19 (31.6\%)} \\
 \bottomrule
 \end{tabular}
 \caption{Detector-impact (evasion) results.}

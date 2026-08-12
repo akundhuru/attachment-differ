@@ -20,7 +20,7 @@ extractor that reads benign while the victim reads a lure.
   vectors, plus an OCR "what the human sees" oracle. On real documents,
   extractors diverge on **46%** of attachment-pair comparisons.
 - **Attack (D4)** — which divergences flip a modern content detector. Two
-  independent detectors (a deterministic heuristic and Claude) both flip
+  independent detectors (a deterministic heuristic and an LLM) both flip
   malicious→benign on **32%** of extractor pairs for image-masking vectors.
 - **Defense-gap (D5)** — a faithful re-implementation of *PDF Mirage*'s
   (USENIX '17) OCR font-verification defense, shown to catch only the font vector
