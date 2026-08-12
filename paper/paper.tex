@@ -46,9 +46,9 @@ malformed-recoverable---implemented as programmatic mutations; and (3) a
 \textbf{defense-gap} result: we re-implement the OCR font-verification defense
 proposed by \emph{PDF Mirage} (USENIX~'17) and show it catches only the font
 vector it was designed for, missing every non-font vector. On a real public
-document corpus (GovDocs1), extractors diverge on 46\% of attachment-pair
+document corpus (GovDocs1), extractors diverge on 46.5\% of attachment-pair
 comparisons, and two independent content detectors (a deterministic heuristic
-and Claude) both flip malicious$\rightarrow$benign on 32\% of extractor pairs
+and Claude) both flip malicious$\rightarrow$benign on 31.6\% of extractor pairs
 for image-based masking vectors.
 \end{abstract}
 
@@ -74,7 +74,7 @@ to patch.
   \item \textbf{Measurement.} A differential harness (\S\ref{sec:harness}) that
   runs $N$ extractors plus an OCR render-oracle over an attachment and
   quantifies pairwise divergence, per-extractor blind-spot rates, and
-  per-format/vector breakdowns. On real documents it measures a 46\% pairwise
+  per-format/vector breakdowns. On real documents it measures a 46.5\% pairwise
   divergence rate (\S\ref{sec:measurement}).
   \item \textbf{Attack.} A vector taxonomy (\S\ref{sec:taxonomy}) and a
   detector-impact study (\S\ref{sec:detector}) showing which divergences flip a
@@ -103,6 +103,13 @@ rather than AV.
 obfuscation prevalence (386 phishing emails, ten techniques) and its impact on
 SpamAssassin/Rspamd scores. Ours is \emph{attachments}, a controlled automated
 differential rather than a prevalence measurement, against modern detectors.
+
+\paragraph{Shadow Attacks~\cite{shadowattacks}.} Hide/replace content in
+\emph{signed} PDFs so a viewer renders content the signature-validation logic
+does not see---a \emph{renderer-vs-signature} gap in a document-integrity threat
+model. Ours is orthogonal: an \emph{extractor-vs-extractor} (and
+extractor-vs-render) gap in a content-detection threat model, with no signature
+or single privileged view.
 
 \paragraph{Positioning.} The intersection---a multi-extractor \emph{content}
 differential in the email-attachment threat model, framed as a detector-evasion
@@ -187,9 +194,10 @@ of files diverge---a clean separation confirming the vectors, not the harness,
 drive divergence.
 
 \paragraph{Real corpus.} We normalize public corpora with an \code{.eml}/\code{.mbox}
-attachment loader. Apache SpamAssassin (2{,}400 spam emails $\rightarrow$ 31
-attachments) is overwhelmingly image/HTML; document attachments are rare---itself
-a finding about where document-parser evasion lives. For a document-rich sample
+attachment loader. From the Apache SpamAssassin public corpus we process the spam
+sets ($\approx$2{,}400 messages), yielding 31 attachments; they are overwhelmingly
+image/HTML---document attachments are rare---itself a finding about where
+document-parser evasion lives. For a document-rich sample
 we use \textbf{GovDocs1} (Digital Corpora~\cite{govdocs1}), ${\sim}$1M
 redistributable real \code{.gov} documents. On a 42-document sample (20 PDF / 10
 DOC / 6 XLS / 6 PPT):
@@ -367,8 +375,8 @@ upside, not a dependency of the contributions above.
 
 The unit a content detector scores---extracted text---is not a property of the
 attachment but of the extractor. We measured that cross-extractor divergence
-directly (46\% on real documents), showed it flips modern content detectors
-including an LLM (32\% of extractor pairs on image-masking vectors), and showed
+directly (46.5\% on real documents), showed it flips modern content detectors
+including an LLM (31.6\% of extractor pairs on image-masking vectors), and showed
 the accepted content-masking defense is font-specific and misses the vectors
 that dominate real attachments. The harness, taxonomy, and defense-gap
 experiment are released for reproduction and extension.

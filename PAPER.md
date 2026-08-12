@@ -26,9 +26,9 @@ image+invisible-decoy, optional-content, and malformed-recoverable — implement
 as programmatic mutations; and (3) a **defense-gap** result: we re-implement the
 OCR font-verification defense proposed by *PDF Mirage* (USENIX '17) and show it
 catches only the font vector it was designed for, missing every non-font vector.
-On a real public document corpus (GovDocs1), extractors diverge on 46% of
+On a real public document corpus (GovDocs1), extractors diverge on 46.5% of
 attachment-pair comparisons, and two independent content detectors (a
-deterministic heuristic and Claude) both flip malicious→benign on 32% of
+deterministic heuristic and Claude) both flip malicious→benign on 31.6% of
 extractor pairs for image-based masking vectors.
 
 ---
@@ -54,7 +54,7 @@ patch.
 1. **Measurement.** A differential harness (§4) that runs N extractors plus an
    OCR render-oracle over an attachment and quantifies pairwise divergence,
    per-extractor blind-spot rates, and per-format/vector breakdowns. On real
-   documents it measures a 46% pairwise divergence rate (§6).
+   documents it measures a 46.5% pairwise divergence rate (§6).
 2. **Attack.** A vector taxonomy (§5) and a detector-impact study (§7) showing
    which divergences flip a modern content detector's verdict — including an
    LLM detector (Claude).
@@ -81,6 +81,12 @@ detectors rather than AV.
 obfuscation prevalence (386 phishing emails, ten techniques) and its impact on
 SpamAssassin/Rspamd scores. Ours is *attachments*, a controlled automated
 differential rather than a prevalence measurement, against modern detectors.
+
+**Shadow Attacks (Mainka et al., NDSS 2021).** Hide/replace content in *signed*
+PDFs so a viewer renders content the signature-validation logic does not see —
+i.e. a *renderer-vs-signature* gap in a document-integrity threat model. Ours is
+orthogonal: an *extractor-vs-extractor* (and extractor-vs-render) gap in a
+content-detection threat model, with no signature or single privileged view.
 
 *Positioning:* the intersection — a multi-extractor *content* differential in the
 email-attachment threat model, framed as a detector-evasion primitive — is, to
@@ -145,9 +151,10 @@ diverge — a clean separation confirming the vectors, not the harness, drive
 divergence.
 
 **Real corpus.** We normalize public corpora with an `.eml`/`.mbox` attachment
-loader. Apache SpamAssassin (2,400 spam emails → 31 attachments) is
-overwhelmingly image/HTML; document attachments are rare — itself a finding about
-where document-parser evasion lives. For a document-rich sample we use
+loader. From the Apache SpamAssassin public corpus we process the spam sets
+(≈2,400 messages), yielding 31 attachments; they are overwhelmingly image/HTML —
+document attachments are rare — itself a finding about where document-parser
+evasion lives. For a document-rich sample we use
 **GovDocs1** (Digital Corpora), ~1M redistributable real `.gov` documents. On a
 42-document sample (20 PDF / 10 DOC / 6 XLS / 6 PPT):
 
@@ -273,8 +280,8 @@ not a dependency of the contributions above.
 
 The unit a content detector scores — extracted text — is not a property of the
 attachment but of the extractor. We measured that cross-extractor divergence
-directly (46% on real documents), showed it flips modern content detectors
-including an LLM (32% of extractor pairs on image-masking vectors), and showed the
+directly (46.5% on real documents), showed it flips modern content detectors
+including an LLM (31.6% of extractor pairs on image-masking vectors), and showed the
 accepted content-masking defense is font-specific and misses the vectors that
 dominate real attachments. The harness, taxonomy, and defense-gap experiment are
 released for reproduction and extension.
@@ -292,6 +299,8 @@ Reproduction commands are inline per section; see `README.md`,
   Information-Based Online Services.* USENIX Security 2017.
 - Carmony, et al. *Extract Me If You Can: Abusing PDF Parsers in Malware
   Detectors.* NDSS 2016.
+- Mainka, C., Mladenov, V., Rohlmann, S. *Shadow Attacks: Hiding and Replacing
+  Content in Signed PDFs.* NDSS 2021.
 - Dalmiere, A., Zhou, Z., Auriol, G., Nicomette, V., Marchand, P. *Measuring
   Modern Phishing Tactics: A Quantitative Study of Body Obfuscation Prevalence,
   Co-occurrence, and Filter Impact.* Security and Trust Management (STM) 2025,
