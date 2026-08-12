@@ -1,6 +1,7 @@
 # One File, Many Readings: Cross-Extractor Content Divergence as an Evasion Primitive in Email Attachment Pipelines
 
-**Draft — arXiv preprint (cs.CR).** Author: Ankitha Kundhuru. Status: working
+**Draft — arXiv preprint (cs.CR).** Author: Ankitha Kundhuru, Independent
+Researcher (akundhuru@cs.stonybrook.edu). Status: working
 draft; numbers are from the reference harness in this repository and are
 reproducible via the commands noted per section. Small-sample results are marked
 *preliminary*; scaling them is a turn of the crank, not new engineering.

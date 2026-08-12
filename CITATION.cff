@@ -12,6 +12,8 @@ abstract: >-
 authors:
   - given-names: Ankitha
     family-names: Kundhuru
+    affiliation: "Independent Researcher"
+    email: "akundhuru@cs.stonybrook.edu"
 version: 0.1.1
 date-released: "2026-08-11"
 license: MIT
