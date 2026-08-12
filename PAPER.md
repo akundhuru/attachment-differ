@@ -88,6 +88,11 @@ i.e. a *renderer-vs-signature* gap in a document-integrity threat model. Ours is
 orthogonal: an *extractor-vs-extractor* (and extractor-vs-render) gap in a
 content-detection threat model, with no signature or single privileged view.
 
+These works form an explicit lineage: Shadow Attacks itself extends PDF Mirage's
+object-level *extracted ≠ rendered* insight into the signature-validation model;
+we extend the same insight into the *extraction* model, across multiple
+extractors.
+
 *Positioning:* the intersection — a multi-extractor *content* differential in the
 email-attachment threat model, framed as a detector-evasion primitive — is, to
 our knowledge, open.
@@ -135,7 +140,7 @@ human and another to a text-layer parser (`mutations/`, validated end-to-end by
 |---|---|---|---|
 | 1 | invisible-layer | text render mode 3 | decoy drawn invisibly; parsers read it, OCR/human don't |
 | 2 | text-as-image | rasterization | content is pixels, no text layer; parsers blind, OCR reads |
-| 3 | image+invisible decoy | 1+2 | lure as image, benign invisible decoy; parsers read benign |
+| 3 | image+invisible decoy | text-as-image | lure as image, benign invisible decoy; parsers read benign |
 | 4 | optional-content | OCG layer OFF | decoy in a hidden PDF layer; renderers hide, parsers extract |
 | 5 | malformed-recoverable | corrupt xref | lenient parsers recover, strict ones error (availability divergence) |
 | 6 | font-encoding | glyph ≠ `/ToUnicode` | PDF Mirage primitive; parsers extract a scramble, OCR reads the glyphs |
@@ -151,10 +156,12 @@ diverge — a clean separation confirming the vectors, not the harness, drive
 divergence.
 
 **Real corpus.** We normalize public corpora with an `.eml`/`.mbox` attachment
-loader. From the Apache SpamAssassin public corpus we process the spam sets
-(≈2,400 messages), yielding 31 attachments; they are overwhelmingly image/HTML —
-document attachments are rare — itself a finding about where document-parser
-evasion lives. For a document-rich sample we use
+loader. From the Apache SpamAssassin public corpus we process all four spam
+archives (`20021010`/`20030228`/`20030228_2`/`20050311_2`; 2,400 messages, not
+deduplicated across the superseded 2002 release), recovering 31 attachments — of
+which only one is an Office document (25 are images, 4 HTML). Document
+attachments are rare here, itself a finding about where document-parser evasion
+lives. For a document-rich sample we use
 **GovDocs1** (Digital Corpora), ~1M redistributable real `.gov` documents. On a
 42-document sample (20 PDF / 10 DOC / 6 XLS / 6 PPT):
 
@@ -176,10 +183,11 @@ similarity 0.25):
 | pypdf | `/thrqtrEMdash` (internal glyph name leaked) | 31,614 |
 | pdfminer | `(cid:1)` (unmapped CID) | 25,270 |
 | tika | `�` (U+FFFD) | 24,619 |
-| pdfbox | `\x01` (raw control byte) — ~40% of the text | 12,519 |
+| pdfbox | `\x01` (raw control byte) | 12,519 |
 
-This is a *naturally occurring* font/encoding divergence in the wild — the same
-class §5's vector 6 weaponizes deliberately.
+(For pdfbox, these raw control bytes make up ~40% of its extracted text.) This is
+a *naturally occurring* font/encoding divergence in the wild — the same class
+§5's vector 6 weaponizes deliberately.
 
 ## 7. Detector Impact (D4)
 
@@ -188,7 +196,8 @@ non-font content-masking vectors (the font vector is evaluated separately as the
 subject of the §8 defense-gap experiment). For each such masking vector we
 classify every extractor's output and the OCR ground truth with two detectors
 — a deterministic phishing heuristic (offline, zero-cost, reproducible) and an
-LLM detector (structured-output verdict). An **evasion** is a
+LLM detector (structured-output verdict; the exact model and snapshot version are
+pinned in `README.md`). An **evasion** is a
 (file, extractor) pair where the OCR truth scores malicious but the extractor's
 text scores benign.
 
@@ -249,8 +258,8 @@ fix: the root entry is loaded directly and never passes through `append_kids`, s
 it is never marked "used"; a self-referential root therefore slips into its own
 `kids` and recurses in `_list()` during `listdir()` — a path the #103 fix does not
 cover. It is low-severity (a catchable `RecursionError`; #103 itself received no
-CVE), reproduces on the current release, and is addressed by a one-line complement
-to the #103 fix. We report it, if at all, as an incomplete-fix hardening PR citing
+CVE), reproduces on the current release (olefile v0.47), and is addressed by a
+one-line complement to the #103 fix. We report it, if at all, as an incomplete-fix hardening PR citing
 #103, and make **no CVE claim**. A weaker pdfminer.six super-linear-time
 observation (73 KB → ~55 CPU-s) was also recorded. The takeaway is methodological:
 the harness surfaced a real, minimizable robustness gap from real seeds; see
@@ -305,4 +314,7 @@ Reproduction commands are inline per section; see `README.md`,
   Modern Phishing Tactics: A Quantitative Study of Body Obfuscation Prevalence,
   Co-occurrence, and Filter Impact.* Security and Trust Management (STM) 2025,
   Springer LNCS. arXiv:2506.20228.
+- Garfinkel, S., Farrell, P., Roussev, V., Dinolt, G. *Bringing Science to
+  Digital Forensics with Standardized Forensic Corpora.* Digital Investigation
+  6(S1):S2–S11, DFRWS 2009. doi:10.1016/j.diin.2009.06.016. *(GovDocs1)*
 - Albertini, A. *Corkami / file-format tricks.* https://github.com/corkami/pocs

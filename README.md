@@ -48,8 +48,11 @@ python differ.py corpus/<file>.pdf     # one file, all available extractors
 - OCR oracle → the `tesseract` binary (`brew install tesseract`).
 - Tika / PDFBox → a JRE + the app jars; set `TIKA_JAR` / `PDFBOX_JAR` (see
   `env.sh`), then `source env.sh` before a run.
-- LLM detector → `export ANTHROPIC_API_KEY=...` (`DETECTOR_MODEL=claude-haiku-4-5`
-  for a ~5× cheaper run); otherwise the offline heuristic detector runs alone.
+- LLM detector → `export ANTHROPIC_API_KEY=...`; otherwise the offline heuristic
+  detector runs alone. **Pinned model for the paper's D4 numbers:**
+  `DETECTOR_MODEL=claude-haiku-4-5` (Anthropic Claude Haiku 4.5). Any
+  chat-completion LLM can be substituted via `DETECTOR_MODEL`; the paper reports
+  the detector generically as "an LLM," and this is the exact snapshot used.
 
 Common runs:
 ```bash
