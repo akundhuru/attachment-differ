@@ -177,20 +177,60 @@ class OCRGroundTruth(Extractor):
 
 # ------------------------------ JAVA BRIDGE ------------------------------
 
+def _tika_server_extract(base_url: str, path: str, timeout: float = 120.0) -> str:
+    """PUT a file to a warm tika-server's /tika endpoint and return plain text.
+
+    Byte-identical to `java -jar tika-app.jar --text` on the same Tika version
+    (both use a text BodyContentHandler), but reuses one warm JVM instead of
+    spawning one per file — the difference between ~7 s/file and ~ms/file, which
+    is what makes a multi-thousand-document corpus tractable. stdlib only.
+    """
+    import urllib.request
+    url = base_url.rstrip("/") + "/tika"
+    with open(path, "rb") as fh:
+        data = fh.read()
+    headers = {"Accept": "text/plain", "Content-Type": "application/octet-stream"}
+    # Control Tika's built-in PDF OCR explicitly — it is the confound the paper
+    # flags (Tika silently OCRs embedded images, behaving as parser+OCR). Setting
+    # this makes the measurement reproducible instead of depending on whether a
+    # tesseract binary happens to be on the server's PATH. Values: no_ocr,
+    # auto, ocr_and_text_extraction, ocr_only. Default no_ocr = pure text
+    # extraction, comparable to pypdf/pdfminer/pdfbox.
+    strategy = os.environ.get("TIKA_OCR_STRATEGY", "no_ocr")
+    if strategy:
+        headers["X-Tika-PDFOcrStrategy"] = strategy
+    req = urllib.request.Request(url, data=data, method="PUT", headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
 class TikaExtractor(Extractor):
-    """Apache Tika. Two backends, tried in order:
-      A. TIKA_JAR env var → `java -jar $TIKA_JAR --text <file>` (pinned, preferred)
-      B. the `tika` python package (auto-downloads a server jar; needs a JRE)
-    Multi-format: PDF, OOXML, OLE — Tika uses PDFBox under the hood for PDFs, so
-    tika-vs-pdfbox divergence is itself a finding worth logging.
+    """Apache Tika. Three backends, tried in order:
+      A. TIKA_SERVER_URL env var → HTTP PUT to a warm tika-server (bulk-scale)
+      B. TIKA_JAR env var → `java -jar $TIKA_JAR --text <file>` (pinned, per-file)
+      C. the `tika` python package (auto-downloads a server jar; needs a JRE)
+    All three route through normalize(), so they produce identical text for a
+    given Tika version — A just avoids per-file JVM startup. Multi-format: PDF,
+    OOXML, OLE — Tika uses PDFBox under the hood for PDFs, so tika-vs-pdfbox
+    divergence is itself a finding worth logging.
     """
     name = "tika"
     formats = {"pdf", "docx", "xlsx", "pptx", "ole", "doc", "xls", "ppt"}
 
     def extract(self, path: str) -> ExtractionResult:
+        # backend A: warm tika-server (preferred for bulk runs)
+        server = os.environ.get("TIKA_SERVER_URL")
+        if server:
+            try:
+                text = _tika_server_extract(server, path)
+                return ExtractionResult(self.name, normalize(text), ok=True,
+                                        meta={"backend": "server"})
+            except Exception as e:
+                return ExtractionResult(self.name, "", ok=False,
+                                        error=f"tika-server: {e!r}")
         jar = os.environ.get("TIKA_JAR")
         java = shutil.which("java")
-        # backend A: pinned jar via subprocess
+        # backend B: pinned jar via subprocess
         if jar and java:
             try:
                 out = subprocess.run(
