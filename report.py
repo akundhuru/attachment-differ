@@ -17,6 +17,7 @@ results/ stays small and never carries corpus content (phishing/malware) verbati
 """
 from __future__ import annotations
 import hashlib
+import math
 from collections import defaultdict
 from itertools import combinations
 
@@ -25,6 +26,24 @@ from differ import similarity
 
 def _sha1(s: str) -> str:
     return hashlib.sha1(s.encode("utf-8", "replace")).hexdigest()[:12]
+
+
+def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for a binomial proportion k/n.
+
+    Preferred over the normal (Wald) interval for the rates this study reports:
+    it stays inside [0,1], behaves well for the small per-format/per-group cells,
+    and does not collapse to a zero-width interval at k=0 or k=n. Returns
+    (low, high); (0.0, 0.0) for n=0.
+    """
+    if n == 0:
+        return (0.0, 0.0)
+    p = k / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    center = (p + z2 / (2 * n)) / denom
+    half = (z * math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))) / denom
+    return (round(max(0.0, center - half), 4), round(min(1.0, center + half), 4))
 
 
 def serialize_report(rep: dict, group: str = "") -> dict:
@@ -69,6 +88,7 @@ def aggregate(records: list[dict], threshold: float = 0.95) -> dict:
     pair_comparable: dict[str, int] = defaultdict(int)
     pair_divergent: dict[str, int] = defaultdict(int)
     pair_by_group: dict[tuple, list[int]] = defaultdict(lambda: [0, 0])  # (group,pair)->[comp,div]
+    pair_by_format: dict[tuple, list[int]] = defaultdict(lambda: [0, 0])  # (fmt,pair)->[comp,div]
 
     ext_applicable: dict[str, int] = defaultdict(int)
     ext_ok: dict[str, int] = defaultdict(int)
@@ -128,6 +148,9 @@ def aggregate(records: list[dict], threshold: float = 0.95) -> dict:
             gp = pair_by_group[(group, pk)]
             gp[0] += 1
             gp[1] += int(diverged)
+            fp = pair_by_format[(fmt, pk)]
+            fp[0] += 1
+            fp[1] += int(diverged)
 
     def _rate(num: int, den: int) -> float:
         return round(num / den, 4) if den else 0.0
@@ -135,12 +158,15 @@ def aggregate(records: list[dict], threshold: float = 0.95) -> dict:
     pairs = []
     for pk in sorted(pair_comparable):
         comp, div = pair_comparable[pk], pair_divergent[pk]
+        lo, hi = _wilson(div, comp)
         pairs.append({"pair": pk, "comparable": comp, "divergent": div,
-                      "divergence_rate": _rate(div, comp)})
+                      "divergence_rate": _rate(div, comp),
+                      "ci_low": lo, "ci_high": hi})
 
     extractors = []
     for name in sorted(ext_applicable):
         appl = ext_applicable[name]
+        lo, hi = _wilson(ext_blind[name], appl)
         extractors.append({
             "extractor": name,
             "applicable": appl,
@@ -149,33 +175,60 @@ def aggregate(records: list[dict], threshold: float = 0.95) -> dict:
             "empty": ext_empty[name],
             "blind": ext_blind[name],
             "blind_rate": _rate(ext_blind[name], appl),
+            "blind_ci_low": lo, "blind_ci_high": hi,
         })
 
-    by_format = [{"format": f, "files": fmt_files[f],
-                  "files_with_divergence": fmt_divergent_files[f],
-                  "rate": _rate(fmt_divergent_files[f], fmt_files[f])}
-                 for f in sorted(fmt_files)]
-    by_group = [{"group": g or "(none)", "files": group_files[g],
-                 "files_with_divergence": group_divergent_files[g],
-                 "rate": _rate(group_divergent_files[g], group_files[g])}
-                for g in sorted(group_files)]
+    def _fmt_row(f: str) -> dict:
+        lo, hi = _wilson(fmt_divergent_files[f], fmt_files[f])
+        return {"format": f, "files": fmt_files[f],
+                "files_with_divergence": fmt_divergent_files[f],
+                "rate": _rate(fmt_divergent_files[f], fmt_files[f]),
+                "ci_low": lo, "ci_high": hi}
 
+    by_format = [_fmt_row(f) for f in sorted(fmt_files)]
+
+    def _group_row(g: str) -> dict:
+        lo, hi = _wilson(group_divergent_files[g], group_files[g])
+        return {"group": g or "(none)", "files": group_files[g],
+                "files_with_divergence": group_divergent_files[g],
+                "rate": _rate(group_divergent_files[g], group_files[g]),
+                "ci_low": lo, "ci_high": hi}
+
+    by_group = [_group_row(g) for g in sorted(group_files)]
+
+    # per-format x per-pair divergence: which extractor pairs diverge on which
+    # formats, with a CI per cell (the stratified view the scaled study needs so
+    # a headline isn't an average over heterogeneous format mixes).
+    by_format_pair = []
+    for (fmt, pk) in sorted(pair_by_format):
+        comp, div = pair_by_format[(fmt, pk)]
+        lo, hi = _wilson(div, comp)
+        by_format_pair.append({"format": fmt, "pair": pk,
+                               "comparable": comp, "divergent": div,
+                               "divergence_rate": _rate(div, comp),
+                               "ci_low": lo, "ci_high": hi})
+
+    o_lo, o_hi = _wilson(total_divergent, total_comparisons)
     return {
         "threshold": threshold,
         "n_files": len(records),
         "total_pair_comparisons": total_comparisons,
         "total_divergent_comparisons": total_divergent,
         "overall_divergence_rate": _rate(total_divergent, total_comparisons),
+        "overall_ci_low": o_lo,
+        "overall_ci_high": o_hi,
         "pairs": pairs,
         "extractors": extractors,
         "by_format": by_format,
+        "by_format_pair": by_format_pair,
         "by_group": by_group,
     }
 
 
 def pairs_csv(summary: dict) -> str:
-    """Pairwise divergence table as CSV text."""
-    lines = ["pair,comparable,divergent,divergence_rate"]
+    """Pairwise divergence table as CSV text (with 95% Wilson CI)."""
+    lines = ["pair,comparable,divergent,divergence_rate,ci_low,ci_high"]
     for p in summary["pairs"]:
-        lines.append(f"{p['pair']},{p['comparable']},{p['divergent']},{p['divergence_rate']}")
+        lines.append(f"{p['pair']},{p['comparable']},{p['divergent']},"
+                     f"{p['divergence_rate']},{p['ci_low']},{p['ci_high']}")
     return "\n".join(lines) + "\n"

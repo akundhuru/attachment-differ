@@ -24,6 +24,7 @@ corpus/*.pdf
 corpus/baseline/
 corpus/mutated/
 corpus/real/
+corpus/govdocs_zips/
 corpus/*.docx
 corpus/*.doc
 corpus/*.xls

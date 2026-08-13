@@ -160,18 +160,33 @@ def _print_summary(summary: dict, out_dir: str, n: int, n_new: int = 0) -> None:
     tag = f"{n} files" + (f", {n_new} this pass" if n_new != n else "")
     print(f"\n=== run summary  ({tag}) ===")
     print(f"overall divergence rate: {summary['overall_divergence_rate']:.2%}"
+          f"  [95% CI {summary.get('overall_ci_low', 0):.2%}"
+          f"-{summary.get('overall_ci_high', 0):.2%}]"
           f"  ({summary['total_divergent_comparisons']}/"
           f"{summary['total_pair_comparisons']} pair comparisons)")
 
-    print("\npairwise divergence rate:")
+    print("\npairwise divergence rate  [95% CI]:")
     for p in summary["pairs"]:
         print(f"  {p['pair']:24} {p['divergence_rate']:6.2%}"
+              f"  [{p.get('ci_low', 0):.2%}-{p.get('ci_high', 0):.2%}]"
               f"  ({p['divergent']}/{p['comparable']})")
 
     print("\nextractor blind-spot rate (empty/error while another recovered text):")
     for e in summary["extractors"]:
         print(f"  {e['extractor']:11} blind {e['blind_rate']:6.2%}"
               f"  (ok={e['ok']} err={e['error']} empty={e['empty']} /{e['applicable']})")
+
+    print("\nby format (files with any divergence)  [95% CI]:")
+    for f in summary.get("by_format", []):
+        print(f"  {f['format']:6} files={f['files']:4}"
+              f"  with-divergence {f['rate']:6.2%}"
+              f"  [{f.get('ci_low', 0):.2%}-{f.get('ci_high', 0):.2%}]")
+
+    print("\nby format x pair (pair-comparison divergence rate)  [95% CI]:")
+    for fp in summary.get("by_format_pair", []):
+        print(f"  {fp['format']:5} {fp['pair']:22} {fp['divergence_rate']:6.2%}"
+              f"  [{fp.get('ci_low', 0):.2%}-{fp.get('ci_high', 0):.2%}]"
+              f"  ({fp['divergent']}/{fp['comparable']})")
 
     print("\nby corpus group:")
     for g in summary["by_group"]:
