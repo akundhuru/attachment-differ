@@ -52,6 +52,40 @@ echo "== 5. D5 defense gap (PDF Mirage font check vs. every vector) =="
 python defense_gap.py
 
 echo
-echo "== done. outputs in results/runs/, results/detector_impact/, results/defense_gap/ =="
-echo "For the real-corpus matrix, first normalize a public corpus into corpus/real/"
-echo "(see REAL_CORPUS.md), then:  OCR_DISABLE=1 python matrix.py corpus/real"
+echo "== done (synthetic). outputs in results/runs/, results/detector_impact/, results/defense_gap/ =="
+echo
+echo "-----------------------------------------------------------------------"
+echo "SCALED REAL-CORPUS RUN (§6 headline: no_ocr 43.3%, N=5,788) — OPTIONAL"
+echo "-----------------------------------------------------------------------"
+cat <<'STEPS'
+Long (hours) and network-dependent, so it is documented here rather than run by
+default. All commands are copy-pasteable from the repo root after `source env.sh`.
+
+  # 6a. Fetch the GovDocs1 bulk (12 threads = the paper's corpus; deterministic).
+  #     Combined with the seed dirs this yields ~5,928 extractable docs in
+  #     corpus/real/ (PDF/DOC/XLS/PPT). See REAL_CORPUS.md.
+  python corpus/fetch_govdocs.py --threads 12 --max-mb 3
+
+  # 6b. Warm Tika server (one JVM for all files; no_ocr = deterministic, the
+  #     paper's primary configuration — launched WITHOUT tesseract on its PATH).
+  ./tika_server.sh start
+  export TIKA_SERVER_URL=http://localhost:9998
+
+  # 6c. The D3 matrix at scale. OCR_DISABLE=1 turns off the render oracle for a
+  #     pure extractor-vs-extractor run; --jobs 8 parallelizes; the per-file
+  #     SIGALRM cap (FILE_TIMEOUT, default 120s) keeps a pathological input from
+  #     wedging the pool. Resumable: re-run with --resume results/runs/<stamp>.
+  #     Writes summary.json (43.3% [42.6-44.0], per-format + Wilson CIs) + pairs.csv.
+  OCR_DISABLE=1 python matrix.py corpus/real --jobs 8
+
+  ./tika_server.sh stop
+
+  # 6d. Robustness at scale (§9): re-verify the flagged over-cap files as GENUINE
+  #     hangs in ISOLATION (single parser, idle CPU, one-at-a-time) — the only way
+  #     to separate real hangs from concurrency false positives. Stage the files
+  #     recorded as errored=["timeout"] in the run's per_file.jsonl into a dir,
+  #     then run the fuzz harness in corpus-pass (raw, no mutation) mode:
+  python -m fuzz.fuzz --seeds <timeout-files-dir> --corpus-pass \
+      --targets pypdf,pdfminer,oletools,tika,pdfbox --timeout 60
+  #     Paper result: of 81 verified, only 6 genuine hangs, all Apache Tika.
+STEPS
