@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 import json
 import os
+import signal
 import sys
 import time
 
@@ -37,6 +38,26 @@ from differ import run_file
 from report import serialize_report, aggregate, pairs_csv
 
 EXTS = (".pdf", ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt", ".ole", ".msg")
+
+# Per-file wall-clock cap. Pure-Python parsers (pypdf/pdfminer) have no internal
+# guard against pathological inputs — a FlateDecode decompression bomb or a
+# quadratic-inflate stream will spin a worker at 100% CPU indefinitely and wedge
+# the whole pool (zero output). A hard SIGALRM in each worker records such a file
+# as errored=["timeout"] and lets the run continue; aggregate() skips error rows,
+# so the divergence stats are unaffected. Override with FILE_TIMEOUT (seconds).
+# LIMITATION: SIGALRM only interrupts Python-level loops. A native crash or a
+# hang inside a C extension / Java subprocess that never returns to the
+# interpreter can still lose a worker and deadlock the pool; the robust fix is a
+# pool-level result timeout (maxtasksperchild + imap timeout). Rare in practice.
+FILE_TIMEOUT = int(os.environ.get("FILE_TIMEOUT", "120"))
+
+
+class _FileTimeout(Exception):
+    pass
+
+
+def _on_alarm(signum, frame):
+    raise _FileTimeout()
 
 
 def _iter_files(root: str):
@@ -58,15 +79,33 @@ def _group_of(path: str, root: str) -> str:
 # module-level worker so it is picklable for multiprocessing.Pool
 def _worker(args):
     path, root, threshold = args
+    # arm a per-file wall-clock timeout (SIGALRM is per-process, so each pool
+    # worker gets its own independent alarm). Guarded: SIGALRM only exists on
+    # unix, and a serial run on the main thread also supports it.
+    have_alarm = hasattr(signal, "SIGALRM")
+    if have_alarm:
+        try:
+            signal.signal(signal.SIGALRM, _on_alarm)
+            signal.alarm(FILE_TIMEOUT)
+        except (ValueError, OSError):
+            have_alarm = False  # not on the main thread of this process
     try:
         rep = run_file(path, threshold=threshold)
         rec = serialize_report(rep, group=_group_of(path, root))
         line = (f"  ran {path}  [{rep['format']}]  "
                 f"divergences={len(rep['divergences'])}  errored={rep['errored']}")
         return path, rec, line
+    except _FileTimeout:
+        return path, {"file": os.path.abspath(path),
+                      "error": f"timeout after {FILE_TIMEOUT}s",
+                      "errored": ["timeout"]}, \
+            f"  TIMEOUT {path}  (>{FILE_TIMEOUT}s — pathological input, skipped)"
     except Exception as e:  # defensive: one bad file must not kill the pool
         return path, {"file": os.path.abspath(path), "error": repr(e)}, \
             f"  ERR {path}: {e!r}"
+    finally:
+        if have_alarm:
+            signal.alarm(0)
 
 
 def _already_done(jsonl_path: str) -> set:

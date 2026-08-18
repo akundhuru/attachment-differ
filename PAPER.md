@@ -3,8 +3,9 @@
 **Draft — arXiv preprint (cs.CR).** Author: Ankitha Kundhuru, Independent
 Researcher (akundhuru@cs.stonybrook.edu). Status: working
 draft; numbers are from the reference harness in this repository and are
-reproducible via the commands noted per section. Small-sample results are marked
-*preliminary*; scaling them is a turn of the crank, not new engineering.
+reproducible via the commands noted per section. The core divergence measurement
+(§6) is at n=5,788 real documents; remaining small-sample results (detector
+impact, per-vector) are marked *preliminary*.
 
 ---
 
@@ -27,8 +28,9 @@ image+invisible-decoy, optional-content, and malformed-recoverable — implement
 as programmatic mutations; and (3) a **defense-gap** result: we re-implement the
 OCR font-verification defense proposed by *PDF Mirage* (USENIX '17) and show it
 catches only the font vector it was designed for, missing every non-font vector.
-On a real public document corpus (GovDocs1), extractors diverge on 46.5% of
-attachment-pair comparisons, and two independent content detectors (a
+On a real public document corpus of **5,788 GovDocs1 documents**, extractors
+diverge on **43.3%** (95% CI 42.6–44.0%) of attachment-pair comparisons under a
+deterministic, OCR-free configuration, and two independent content detectors (a
 deterministic heuristic and Claude) both flip malicious→benign on 31.6% of
 extractor pairs for image-based masking vectors.
 
@@ -54,8 +56,8 @@ patch.
 **Contributions.**
 1. **Measurement.** A differential harness (§4) that runs N extractors plus an
    OCR render-oracle over an attachment and quantifies pairwise divergence,
-   per-extractor blind-spot rates, and per-format/vector breakdowns. On real
-   documents it measures a 46.5% pairwise divergence rate (§6).
+   per-extractor blind-spot rates, and per-format/vector breakdowns. On 5,788
+   real documents it measures a 43.3% pairwise divergence rate (§6).
 2. **Attack.** A vector taxonomy (§5) and a detector-impact study (§7) showing
    which divergences flip a modern content detector's verdict — including
    Claude.
@@ -163,17 +165,33 @@ deduplicated across the superseded 2002 release), recovering 31 attachments — 
 which only one is an Office document (25 are images, 4 HTML). Document
 attachments are rare here, itself a finding about where document-parser evasion
 lives. For a document-rich sample we use
-**GovDocs1** (Digital Corpora), ~1M redistributable real `.gov` documents. On a
-42-document sample (20 PDF / 10 DOC / 6 XLS / 6 PPT):
+**GovDocs1** (Digital Corpora), ~1M redistributable real `.gov` documents. We run
+the harness over **5,928 GovDocs1 documents** (PDF/DOC/XLS/PPT) in the
+deterministic **`no_ocr`** configuration (Tika `X-Tika-PDFOcrStrategy=no_ocr`, so
+every extractor performs pure text extraction and the comparison is not confounded
+by Tika's built-in image OCR — see the OCR-confound note below). Of the 5,928
+files, 5,788 completed under all extractors; 140 induced parser timeouts or a
+native crash and are analyzed separately in §9.
 
-| metric | value |
+| metric (`no_ocr`, N=5,788) | value |
 |---|---|
-| overall pairwise divergence | **46.5%** (66/142 comparisons) |
-| files with ≥1 divergence | **69%** |
-| pdfminer vs pypdf | **55%** (vs **0%** on the synthetic baseline) |
-| pdfminer vs tika | 70% · oletools vs tika 68% · pdfbox vs pdfminer 50% |
+| overall pairwise divergence | **43.3%** — 95% CI [42.6%, 44.0%] (7,935/18,336 comparisons) |
+| files with ≥1 divergence | **60.6%** |
+| by format (files w/ ≥1 divergence) | PPT **80.0%** · XLS **78.9%** · PDF **61.9%** · DOC **32.3%** |
+| pdfminer vs pypdf | **68.0%** (vs **0%** on the synthetic baseline) |
+| selected pairs | pdfminer vs tika 67.2% · pdfbox vs pdfminer 65.2% · oletools vs tika 73.9% (PPT 99.6% / XLS 99.8%) · pdfbox vs tika 7.4% |
 
-*Preliminary (n=42); the harness scales to full GovDocs1 threads.*
+All rates carry Wilson 95% confidence intervals (full table in `RESULTS.md`);
+intervals are ≤±1.8 points at this sample size.
+
+**OCR confound (why `no_ocr` is primary).** Tika silently OCRs embedded images,
+which inflates apparent divergence against the pure-text extractors on identical
+bytes. On our 42-document pilot the same corpus measures **37.3%** divergence
+under `no_ocr` but **46.5%** with Tika's OCR-on strategy; we therefore adopt the
+deterministic `no_ocr` configuration as our primary measurement. Scaling `no_ocr`
+from the pilot (37.3%, n=42) to 5,788 documents *raises* the rate to 43.3%,
+because the larger corpus is richer in the PPT/XLS formats that diverge most
+(≈80%) — the phenomenon is robust and, if anything, stronger at scale.
 
 **Worked example (`000816.pdf`, a US Census NAICS report).** The same special-dash
 glyph is extracted four incompatible ways on identical bytes (pypdf vs pdfminer
@@ -272,11 +290,31 @@ Real DoS shows the opposite signature — *small input, disproportionate cost* �
 which the size cap plus per-run wall-time recording isolates. CVEs remain upside,
 not a dependency of the contributions above.
 
+**Robustness at scale (a real-world instance of the same caution).** The 5,928-document
+`no_ocr` extraction run (§6), executed 8-way concurrently under a 120 s per-file
+wall-clock cap, flagged **139 files** as exceeding the cap. Taken at face value
+this looks like a 2.3% parser-hang rate — but the caution above predicts most are
+CPU-contention artifacts, not hangs. We tested this directly: the 80 flagged files
+under 1 MB (where a genuine algorithmic-complexity hang would concentrate), plus the
+one file that deadlocked a worker, were re-run in **isolation** (single parser,
+idle CPU, one-at-a-time, 60 s cap) through the fuzz harness's corpus-pass mode.
+Only **6 of the 81** reproduce as genuine hangs — and **all six are Apache Tika**,
+on unmutated real documents (345 KB–2.1 MB); the pure-Python parsers
+(pypdf/pdfminer/oletools) that saturated CPU under contention all completed
+normally (308 clean extractions, 91 ordinary parse exceptions, 0 crashes, 0 OOM).
+This is a genuine *differential robustness* observation — Tika hangs on inputs
+that PDFBox, pypdf, and pdfminer parse without incident — and a cautionary data
+point: the raw concurrent-run timeout count overstated genuine hangs by ~13× on
+the verified subset. We make **no CVE claim** (Tika has prior DoS history; these
+inputs require triage against known issues before any disclosure) and report the
+count only as a robustness signal consistent with the divergence thesis.
+
 ## 10. Limitations and Ethics
 
-- **Sample size.** Real-corpus numbers (n=42) and mutation-corpus numbers are
-  preliminary; the harness scales to full corpora — this draft reports the
-  phenomenon and the method, and larger runs are the natural next step.
+- **Sample size.** The core divergence measurement (D3, §6) is now at n=5,788
+  real documents with Wilson confidence intervals. The detector-impact study (D4,
+  §7) and per-vector mutation numbers remain at smaller samples and are the
+  natural next scaling step; they report the phenomenon and the method.
 - **Similarity metric.** `SequenceMatcher` is a first-pass metric; token-set or
   embedding distance may sharpen results without changing the qualitative story.
 - **OCR oracle.** OCR is imperfect and slow on long documents (we expose a page
@@ -289,7 +327,7 @@ not a dependency of the contributions above.
 
 The unit a content detector scores — extracted text — is not a property of the
 attachment but of the extractor. We measured that cross-extractor divergence
-directly (46.5% on real documents), showed it flips modern content detectors
+directly (43.3% across 5,788 real documents), showed it flips modern content detectors
 including Claude (31.6% of extractor pairs on image-masking vectors), and showed the
 accepted content-masking defense is font-specific and misses the vectors that
 dominate real attachments. The harness, taxonomy, and defense-gap experiment are
